@@ -3,7 +3,7 @@ from enum import Enum, unique
 def decode(arg):
     packet = arg.decode().split(" ")
     if packet[0] == Opcode.KEEP_ALIVE.__str__():
-        packet = Packet('KEEP_ALIVE', Status.OK)
+        packet = Packet(Opcode.KEEP_ALIVE, Status.OK)
     elif packet[0] == Opcode.CONNECT.__str__():
         username = packet[1]
         configs = to_dict(packet[2])
@@ -13,10 +13,7 @@ def decode(arg):
 def to_dict(string):
     if string == '{}':
         return {}
-
-    print(string)
     l = string.replace('{', '').replace('}', '').replace('\'', '').split(', ')
-    print(l)
     d = {}
     for kv in l:
         k, v = kv.split(': ')
@@ -50,13 +47,13 @@ class Opcode(Enum):
 
 class Packet(object):
     """generic packet class - used as a keep-alive message as well"""
-    def __init__(self, opcode, status, err):
+    def __init__(self, opcode, status, err = None):
         self.opcode = opcode
         self.status = status
         self.err = err
 
     def encode(self):
-    """encode the message into a string to be sent over TCP socket"""
+        """encode the message into a string to be sent over TCP socket"""
         return (self.opcode.__str__() + " "
             + self.status.__str__() + " "
             + self.err.__str__()).encode()

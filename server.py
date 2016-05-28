@@ -36,7 +36,7 @@ def handle_client_async(client_socket):
         else:
             packet = protocol.decode(request)
             print("[*] Encoded Rebuilt packet", packet.encode())
-            if packet.opcode == Opcode.KEEP_ALIVE.__str__():
+            if packet.opcode == protocol.Opcode.CONNECT or packet.opcode == protocol.Opcode.KEEP_ALIVE:
                 client_socket.send(packet.encode())
 
     client_socket.close()
@@ -46,5 +46,5 @@ while True:
     client, addr = server.accept()
     print("[*] Accepted connection from %s:%d", (addr[0], addr[1]))
 
-    client_handler = threading.Thread(target=handle_client,args=(client,))
+    client_handler = threading.Thread(target=handle_client_async,args=(client,))
     client_handler.start()
