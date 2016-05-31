@@ -168,7 +168,8 @@ class IRCHandler(socketserver.StreamRequestHandler):
             return IRCHandler._error(disconnect,
                                      "username specified does not exist in server.")
 
-    def _handle_create(self, create):
+    @staticmethod
+    def _handle_create(create):
         """
 
         :param create:
@@ -187,7 +188,8 @@ class IRCHandler(socketserver.StreamRequestHandler):
             return IRCHandler._error(create,
                                      "room already exists, use /join to join the room.")
 
-    def _handle_destroy(self, destroy):
+    @staticmethod
+    def _handle_destroy(destroy):
         """
 
         :param destroy:
@@ -206,7 +208,8 @@ class IRCHandler(socketserver.StreamRequestHandler):
             return IRCHandler._error(destroy,
                                      "the room specified does not exist")
 
-    def _handle_join(self, join):
+    @staticmethod
+    def _handle_join(join):
         if join.username in USERS and join.room in ROOMS:
             # join room in users group
             USERS[join.username].join_room(join.room)
@@ -222,7 +225,8 @@ class IRCHandler(socketserver.StreamRequestHandler):
         else:
             return IRCHandler._error(join, "was not able to join the room")
 
-    def _handle_leave(self, leave):
+    @staticmethod
+    def _handle_leave(leave):
         if leave.username in USERS and leave.room in ROOMS:
             # leave room in users group
             USERS[leave.username].leave_room(leave.room)
@@ -240,7 +244,8 @@ class IRCHandler(socketserver.StreamRequestHandler):
         else:
             return IRCHandler._error(leave, "unable to leave room")
 
-    def _handle_list(self, _list):
+    @staticmethod
+    def _handle_list(_list):
         if _list.room is None:
             _list.response = ' '.join(ROOMS)
             _list.length = len(ROOMS)
@@ -259,8 +264,8 @@ class IRCHandler(socketserver.StreamRequestHandler):
         else:
             return IRCHandler._error(_list, "error with list")
 
-
-    def _handle_message(self, msg):
+    @staticmethod
+    def _handle_message(msg):
         if msg.username in USERS and msg.room in ROOMS:
             message(msg.username, msg.message, msg.room)
             logger.info("{} sent message {} to room {}".format(
@@ -271,7 +276,8 @@ class IRCHandler(socketserver.StreamRequestHandler):
         else:
             return IRCHandler._error(msg, "could not send message")
 
-    def _handle_private_message(self, private_message):
+    @staticmethod
+    def _handle_private_message(private_message):
         pmsg = private_message
         if pmsg.username in USERS and pmsg.send_to in USERS:
             priv_message(pmsg.username, pmsg.message, pmsg.send_to)
