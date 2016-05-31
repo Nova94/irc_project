@@ -1,10 +1,10 @@
 import socketserver
+import socket
 import logging
 import protocol
 from protocol import Opcode
 from protocol import Status
 from User import User
-
 
 # set up host and port
 HOST, PORT = "0.0.0.0", 9999
@@ -23,6 +23,7 @@ class Disconnection(Exception):
     """
     This exception is used to handle disconnects
     """
+
     def __init__(self, value):
         self.value = value
 
@@ -30,13 +31,54 @@ class Disconnection(Exception):
         return repr(self.value)
 
 
+def message(username, msg, room):
+    # does user and room exist
+    if username in USERS and room in ROOMS:
+        # if user is in the room, then message room
+        if room in USERS[username].rooms:
+            logger.debug("{}".format(USERS))
+            addresses = []
+            for nick, user in USERS.items():
+                if room in USERS[nick].rooms:
+                    addresses.append(user.address)
+
+            msg_packet = protocol.Message(username, msg, room, status=Status.OK)
+
+            sockets = []
+            for address in addresses:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect(address)
+                sockets.append(s)
+
+            for s in sockets:
+                with s.makefile('w') as wfile:
+                    wfile.write(msg_packet.__str__())
+                s.close()
+
+
+def priv_message(username, msg, send_to):
+    # does user and send_to user exist
+    if username in USERS and send_to in USERS:
+        msg_packet = protocol.PrivateMessage(username, msg, send_to, status=Status.OK)
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect(USERS[send_to].address)
+
+        with s.makefile('w') as wfile:
+            wfile.write(msg_packet.__str__())
+        s.close()
+
+
 class IRCHandler(socketserver.StreamRequestHandler):
     """This is the IRC handler class used by the Threaded socket-server to handle requests"""
+
     def handle(self):
         """ handling request main logic """
         try:
             # read data from socket
             self.data = self.rfile.readline().strip()
+
+            logger.debug(self.request.getpeername())
 
             # decode packet
             packet = protocol.decode(self.data)
@@ -51,7 +93,6 @@ class IRCHandler(socketserver.StreamRequestHandler):
             # write response
             self.wfile.write(response.encode())
         except Disconnection:
-            self.connection.close()
             return
 
     def _handle_packet(self, packet):
@@ -68,6 +109,18 @@ class IRCHandler(socketserver.StreamRequestHandler):
             return self._handle_create(packet)
         elif packet.opcode == Opcode.DESTROY:
             return self._handle_destroy(packet)
+        elif packet.opcode == Opcode.JOIN:
+            return self._handle_join(packet)
+        elif packet.opcode == Opcode.LEAVE:
+            return self._handle_leave(packet)
+        elif packet.opcode == Opcode.LIST:
+            return self._handle_list(packet)
+        elif packet.opcode == Opcode.MSG:
+            return self._handle_message(packet)
+        elif packet.opcode == Opcode.PRIVATE_MSG:
+            return self._handle_private_message(packet)
+        elif packet.opcode == Opcode.BROADCAST_MSG:
+            return self._handle_broadcast_message(packet)
 
         return protocol.Packet(Opcode.KEEP_ALIVE, Status.OK)
 
@@ -79,9 +132,11 @@ class IRCHandler(socketserver.StreamRequestHandler):
         """
         if connect.username not in USERS:
             # create new user and add to USERS dictionary
-            new_user = User(connect.username, self.connection)
+            new_user = User(connect.username, self.connection.getpeername())
+            port = new_user.address[1] + 100
+            new_user.address = (new_user.address[0], port)
+            logger.debug("{} {}".format(new_user.address[0], new_user.address[1]))
             USERS[new_user.nick] = new_user
-
             # log new user
             logger.info("new user {} has connected".format(new_user.nick))
 
@@ -150,6 +205,86 @@ class IRCHandler(socketserver.StreamRequestHandler):
         else:
             return IRCHandler._error(destroy,
                                      "the room specified does not exist")
+
+    def _handle_join(self, join):
+        if join.username in USERS and join.room in ROOMS:
+            # join room in users group
+            USERS[join.username].join_room(join.room)
+
+            # log join
+            logger.info("user {} has joined room {}"
+                        .format(join.username, join.room))
+            # message room that user joined
+            message(join.username, "user {} has joined room {}".format(join.username, join.room), join.room)
+            # return ok
+            join.status = Status.OK
+            return join
+        else:
+            return IRCHandler._error(join, "was not able to join the room")
+
+    def _handle_leave(self, leave):
+        if leave.username in USERS and leave.room in ROOMS:
+            # leave room in users group
+            USERS[leave.username].leave_room(leave.room)
+
+            # log leave
+            logger.info("user {} has left room {}"
+                        .format(leave.username, leave.room))
+
+            # message room that user joined
+            message(leave.username, "user {} has left room {}"
+                    .format(leave.username, leave.room), leave.room)
+            # return ok
+            leave.status = Status.OK
+            return leave
+        else:
+            return IRCHandler._error(leave, "unable to leave room")
+
+    def _handle_list(self, _list):
+        if _list.room is None:
+            _list.response = ' '.join(ROOMS)
+            _list.length = len(ROOMS)
+            _list.status = Status.OK
+            return _list
+        elif _list.room in ROOMS:
+            logger.debug("here2")
+            members = []
+            for nick, user in USERS.items():
+                if _list.room in user.rooms:
+                    members.append(nick)
+            _list.response = ' '.join(members)
+            _list.length = len(members)
+            _list.status = Status.OK
+            return _list
+        else:
+            return IRCHandler._error(_list, "error with list")
+
+
+    def _handle_message(self, msg):
+        if msg.username in USERS and msg.room in ROOMS:
+            message(msg.username, msg.message, msg.room)
+            logger.info("{} sent message {} to room {}".format(
+                msg.username, msg.message, msg.room,
+            ))
+            msg.status = Status.OK
+            return msg
+        else:
+            return IRCHandler._error(msg, "could not send message")
+
+    def _handle_private_message(self, private_message):
+        pmsg = private_message
+        if pmsg.username in USERS and pmsg.send_to in USERS:
+            priv_message(pmsg.username, pmsg.message, pmsg.send_to)
+            logger.info("{} sent message {} to user {}".format(
+                pmsg.username, pmsg.message, pmsg.send_to,
+            ))
+            pmsg.status = Status.OK
+            return pmsg
+        else:
+            return IRCHandler._error(pmsg, "could not send message")
+
+    def _handle_broadcast_message(self, broadcast_message):
+        pass
 
     @staticmethod
     def _error(packet, error_message):

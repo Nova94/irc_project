@@ -3,9 +3,9 @@
 class User(object):
     """This class is used to describe a user which contains a nick, socket, and room list"""
 
-    def __init__(self, nick, socket):
+    def __init__(self, nick, address):
         self.nick = nick
-        self.socket = socket
+        self.address = address
         self.rooms = [nick] # server is the help screen/list items
 
     def join_room(self, room):
