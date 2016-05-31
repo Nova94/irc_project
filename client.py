@@ -1,12 +1,12 @@
 import socketserver
 import logging
 import socket
-from time import sleep
 import protocol
-from protocol import Status
-from protocol import Opcode
 import queue
 import threading
+from protocol import Status
+from protocol import Opcode
+
 
 target_host = '0.0.0.0'
 target_port = 9999
@@ -35,7 +35,7 @@ class IRCClient(socketserver.StreamRequestHandler):
             msg_q.put("*" + packet.username + ": " + packet.message)
         elif packet.opcode == Opcode.BROADCAST_MSG:
             msg_q.put("BROADCAST|" + packet.username + ": " + packet.message)
-        else:
+        elif packet.opcode == Opcode.MSG:
             msg_q.put(packet.username + "(" + packet.room + ")" + ": " + packet.message)
 
 
@@ -211,25 +211,32 @@ def start_client(addr):
 
 
 if __name__ == '__main__':
-    # setup initial connection
+    try:
+        # setup initial connection
 
-    # select username
-    USERNAME = input("enter username> ")
+        # select username
+        USERNAME = input("enter username> ")
 
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(2)
-    s.connect((target_host, target_port))
-    # get address to be used for later
-    address = s.getsockname()
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(2)
+        s.connect((target_host, target_port))
+        # get address to be used for later
+        address = s.getsockname()
 
-    s.send(protocol.Connect(USERNAME, {}).encode())
+        s.send(protocol.Connect(USERNAME, {}).encode())
 
-    # if response is ok, start client's server, else print error
-    for response in s.makefile('r'):
-        response = response.encode()
-        if protocol.decode(response).status == protocol.Status.OK:
-            s.close()
-            start_client(address)
-        elif protocol.decode(response).status == protocol.Status.ERR:
-            print(protocol.decode(response).err)
-    s.close()
+        # if response is ok, start client's server, else print error
+        for response in s.makefile('r'):
+            response = response.encode()
+            if protocol.decode(response).status == protocol.Status.OK:
+                s.close()
+                start_client(address)
+            elif protocol.decode(response).status == protocol.Status.ERR:
+                print(protocol.decode(response).err)
+        s.close()
+    except socket.error as serr:
+        if serr.errno != 111:
+            raise serr
+        else:
+            logger.error("could not contact server - server is probably down")
+
