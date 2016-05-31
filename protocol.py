@@ -2,69 +2,47 @@ from enum import Enum, unique
 
 
 def decode(arg):
+    """
+    decode the argument into a packet
+    :param arg: a string representation of a packet
+    :return: a packet class of Type
+    """
     packet = arg.decode().split(" ")
-    if packet[0] == Opcode.KEEP_ALIVE.__str__():
-        packet = Packet(Opcode.KEEP_ALIVE, Status.OK)
-
-    elif packet[0] == Opcode.CONNECT.__str__():
-        packet = decode_connect(packet)
-
-    elif packet[0] == Opcode.DISCONNECT.__str__():
-        packet = decode_type1(packet, Disconnect)
-
-    elif packet[0] == Opcode.CREATE.__str__():
-        packet = decode_type1(packet, Create)
-
-    elif packet[0] == Opcode.DESTROY.__str__():
-        packet = decode_type1(packet, Destroy)
-
-    elif packet[0] == Opcode.JOIN.__str__():
-        packet = decode_type2(packet, Join)
-
-    elif packet[0] == Opcode.LEAVE.__str__():
-        packet = decode_type2(packet, Leave)
-
-    elif packet[0] == Opcode.LIST.__str__():
-        packet = decode_list(packet)
-
-    elif packet[0] == Opcode.MSG.__str__():
-        packet = decode_type3(packet, Message)
-
-    elif packet[0] == Opcode.PRIVATE_MSG.__str__():
-        packet = decode_type3(packet, PrivateMessage)
-
-    elif packet[0] == Opcode.BROADCAST_MSG.__str__():
-        # packet = decode_type3(packet, Broadcast)
-        pass
-
+    packet = decode_dictionary[packet[0]](packet)
     return packet
 
 
-def decode_type1(packet, protocol_type):
-    var = packet[1]
-    status = packet[2]
-    err = ' '.join(packet[3:])
-    if status == "OK":
-        packet = protocol_type(var, status=Status.OK)
-    elif status == "ERR":
-        packet = protocol_type(var, status=Status.ERR, err=err)
-    else:
-        packet = protocol_type(var)
-    return packet
+def decode_type1(protocol_type):
+    def d1(packet):
+        var = packet[1]
+        status = packet[2]
+        err = ' '.join(packet[3:])
+        if status == "OK":
+            packet = protocol_type(var, status=Status.OK)
+        elif status == "ERR":
+            packet = protocol_type(var, status=Status.ERR, err=err)
+        else:
+            packet = protocol_type(var)
+        return packet
+
+    return d1
 
 
-def decode_type2(packet, protocol_type):
-    var1 = packet[1]
-    var2 = packet[2]
-    status = packet[3]
-    err = ' '.join(packet[4:])
-    if status == "OK":
-        packet = protocol_type(var1, var2, status=Status.OK)
-    elif status == "ERR":
-        packet = protocol_type(var1, var2, status=Status.ERR, err=err)
-    else:
-        packet = protocol_type(var1, var2)
-    return packet
+def decode_type2(protocol_type):
+    def d2(packet):
+        var1 = packet[1]
+        var2 = packet[2]
+        status = packet[3]
+        err = ' '.join(packet[4:])
+        if status == "OK":
+            packet = protocol_type(var1, var2, status=Status.OK)
+        elif status == "ERR":
+            packet = protocol_type(var1, var2, status=Status.ERR, err=err)
+        else:
+            packet = protocol_type(var1, var2)
+        return packet
+
+    return d2
 
 
 def decode_list(packet):
@@ -100,20 +78,24 @@ def decode_list(packet):
     return packet
 
 
-def decode_type3(packet, protocol_type):
-    var1 = packet[1]
-    length = int(packet[2])
-    var2 = ' '.join(packet[3:(3 + length)])
-    var3 = packet[(3 + length)]
-    status = packet[4 + length]
-    err = ' '.join(packet[5 + length:])
-    if status == "OK":
-        packet = protocol_type(var1, var2, var3, status=Status.OK)
-    elif status == "ERR":
-        packet = protocol_type(var1, var2, var3, status=Status.ERR, err=err)
-    else:
-        packet = protocol_type(var1, var2, var3)
-    return packet
+# def decode_type3(packet, protocol_type):
+def decode_type3(protocol_type):
+    def d3(packet):
+        var1 = packet[1]
+        length = int(packet[2])
+        var2 = ' '.join(packet[3:(3 + length)])
+        var3 = packet[(3 + length)]
+        status = packet[4 + length]
+        err = ' '.join(packet[5 + length:])
+        if status == "OK":
+            packet = protocol_type(var1, var2, var3, status=Status.OK)
+        elif status == "ERR":
+            packet = protocol_type(var1, var2, var3, status=Status.ERR, err=err)
+        else:
+            packet = protocol_type(var1, var2, var3)
+        return packet
+
+    return d3
 
 
 def decode_connect(packet):
@@ -160,7 +142,8 @@ class Opcode(Enum):
     LEAVE = 8
     CREATE = 9
     DESTROY = 10
-    FILE_TRANSFER = 11
+
+    # FILE_TRANSFER = 11
 
     def __str__(self):
         return self.name
@@ -356,3 +339,21 @@ class Destroy(Packet):
                 + self.room.__str__() + " "
                 + self.status.__str__() + " "
                 + self.err.__str__() + "\n").encode()
+
+"""
+dictionary used to determine the
+type of packet and returns appropriate packet class
+"""
+decode_dictionary = {
+    "KEEP_ALIVE": Packet(Opcode.KEEP_ALIVE, Status.OK),
+    "CONNECT": decode_connect,
+    "DISCONNECT": decode_type1(Disconnect),
+    "MSG": decode_type3(Message),
+    "PRIVATE_MSG": decode_type3(PrivateMessage),
+    "BROADCAST_MSG": decode_type3(Broadcast),
+    "LIST": decode_list,
+    "JOIN": decode_type2(Join),
+    "LEAVE": decode_type2(Leave),
+    "CREATE": decode_type1(Create),
+    "DESTROY": decode_type1(Destroy),
+}
