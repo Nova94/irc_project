@@ -9,6 +9,9 @@ def decode(arg):
     """
     packet = arg.decode().split(" ")
     packet = decode_dictionary[packet[0]](packet)
+    if packet is None:
+        raise TypeError
+
     return packet
 
 
@@ -96,6 +99,25 @@ def decode_type3(protocol_type):
         return packet
 
     return d3
+
+
+def decode_broadcast(packet):
+    username = packet[1]
+    msg_length = int(packet[2])
+    ml = packet[3:(3 + msg_length)]
+    message = " ".join(ml)
+    num_of_rooms = int(packet[3 + msg_length])
+    rooms = packet[4 + msg_length: 4 + msg_length + num_of_rooms]
+    status = packet[5 + msg_length + num_of_rooms]
+    err = packet[6 + msg_length + num_of_rooms:]
+
+    if status == "OK":
+        packet = Broadcast(username, message, rooms, status=Status.OK)
+    elif status == "ERR":
+        packet = Broadcast(username, message, rooms, status=Status.ERR, err=err)
+    else:
+        packet = Broadcast(username, message, rooms)
+    return packet
 
 
 def decode_connect(packet):
@@ -254,9 +276,30 @@ class Broadcast(Packet):
     def __init__(self, username, message, rooms=None, status=None, err=None):
         super().__init__(Opcode.BROADCAST_MSG, status, err)
         self.username = username
-        self.length = len(message)
+        self.length = len(message.split())
         self.message = message
-        self.rooms = rooms
+        self.rooms = " ".join(rooms)
+        self.num_of_rooms = len(rooms)
+
+    def encode(self):
+        return (self.opcode.__str__() + " "
+                + self.username.__str__() + " "
+                + self.length.__str__() + " "
+                + self.message.__str__() + " "
+                + self.num_of_rooms.__str__() + " "
+                + self.rooms.__str__() + " "
+                + self.status.__str__() + " "
+                + self.err.__str__()).encode()
+
+    def __str__(self):
+        return (self.opcode.__str__() + " "
+                + self.username.__str__() + " "
+                + self.length.__str__() + " "
+                + self.message.__str__() + " "
+                + self.num_of_rooms.__str__() + " "
+                + self.rooms.__str__() + " "
+                + self.status.__str__() + " "
+                + self.err.__str__())
 
 
 class List(Packet):
@@ -340,6 +383,7 @@ class Destroy(Packet):
                 + self.status.__str__() + " "
                 + self.err.__str__() + "\n").encode()
 
+
 """
 dictionary used to determine the
 type of packet and returns appropriate packet class
@@ -350,7 +394,7 @@ decode_dictionary = {
     "DISCONNECT": decode_type1(Disconnect),
     "MSG": decode_type3(Message),
     "PRIVATE_MSG": decode_type3(PrivateMessage),
-    "BROADCAST_MSG": decode_type3(Broadcast),
+    "BROADCAST_MSG": decode_broadcast,
     "LIST": decode_list,
     "JOIN": decode_type2(Join),
     "LEAVE": decode_type2(Leave),

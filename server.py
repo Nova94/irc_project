@@ -2,6 +2,8 @@ import socketserver
 import socket
 import logging
 import protocol
+import signal
+import sys
 from protocol import Opcode
 from protocol import Status
 from User import User
@@ -17,7 +19,7 @@ logger.setLevel(logging.DEBUG)
 # initialize USERS and ROOMS data structures
 USERS = {}
 ROOMS = []
-
+SERVER_SOCKET = None
 
 class Disconnection(Exception):
     """
@@ -29,6 +31,34 @@ class Disconnection(Exception):
 
     def __str__(self):
         return repr(self.value)
+
+
+def disconnect(users):
+    for nick, user in users.items():
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect(user.address)
+        s.send(protocol.Disconnect(nick,
+                                   status=Status.ERR,
+                                   err="server shutting down").encode())
+        s.close()
+
+
+def signal_handler(signal, frame):
+    """Function handles signal interrupt (CTRL-C)
+    :param signal: signal caught
+    :param frame: current stack frame
+    """
+
+    disconnect(USERS)
+
+    logging.info('Server turning off')
+    SERVER_SOCKET.close()
+
+    sys.exit(0)
+
+
+# initialize signal handler
+signal.signal(signal.SIGINT, signal_handler)
 
 
 def message(username, msg, room):
@@ -44,16 +74,21 @@ def message(username, msg, room):
 
             msg_packet = protocol.Message(username, msg, room, status=Status.OK)
 
-            sockets = []
-            for address in addresses:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.connect(address)
-                sockets.append(s)
+            sockets = append_sockets(addresses)
 
             for s in sockets:
                 with s.makefile('w') as wfile:
                     wfile.write(msg_packet.__str__())
                 s.close()
+
+
+def append_sockets(addresses):
+    sockets = []
+    for address in addresses:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect(address)
+        sockets.append(s)
+    return sockets
 
 
 def priv_message(username, msg, send_to):
@@ -67,6 +102,38 @@ def priv_message(username, msg, send_to):
         with s.makefile('w') as wfile:
             wfile.write(msg_packet.__str__())
         s.close()
+
+
+def broadc_message(username, msg, rooms):
+    users = []
+    users = find_users_broadcast(rooms)
+
+    bmsg_packet = protocol.Broadcast(username, msg, rooms, status=Status.OK)
+
+    sockets = []
+    for user in users:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect(user.address)
+        sockets.append(s)
+
+    for s in sockets:
+        with s.makefile("w") as wfile:
+            wfile.write(bmsg_packet.__str__())
+        s.close()
+
+
+def find_users_broadcast(rooms):
+    users = []
+    for room in rooms:
+        if room in ROOMS:
+            for nick, user in USERS.items():
+                append_user(room, user, users)
+    return users
+
+
+def append_user(room, user, users):
+    if room in user.rooms and user not in users:
+        users.append(user)
 
 
 class IRCHandler(socketserver.StreamRequestHandler):
@@ -287,10 +354,22 @@ class IRCHandler(socketserver.StreamRequestHandler):
             pmsg.status = Status.OK
             return pmsg
         else:
-            return IRCHandler._error(pmsg, "could not send message")
+            return IRCHandler._error(pmsg, "could not send private smessage")
 
     def _handle_broadcast_message(self, broadcast_message):
-        pass
+        bmsg = broadcast_message
+        if bmsg.username in USERS:
+            broadc_message(bmsg.username, bmsg.message, bmsg.rooms.split(" "))
+            logger.info(
+                "{} send broadcast message {} to rooms {}".format(
+                    bmsg.username,
+                    bmsg.message,
+                    bmsg.rooms)
+            )
+            bmsg.status = Status.OK
+            return bmsg
+        else:
+            return IRCHandler._error(bmsg, "error with sending the broadcast message")
 
     @staticmethod
     def _error(packet, error_message):
@@ -308,5 +387,7 @@ class IRCHandler(socketserver.StreamRequestHandler):
 
 if __name__ == '__main__':
     server = socketserver.ThreadingTCPServer((HOST, PORT), IRCHandler)
+    SERVER_SOCKET = server.socket
     print("[*] server is now running on {} : {}".format(HOST, PORT))
     server.serve_forever()
+

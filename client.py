@@ -4,6 +4,8 @@ import socket
 import protocol
 import queue
 import threading
+import sys
+import os
 from protocol import Status
 from protocol import Opcode
 
@@ -24,19 +26,25 @@ msg_q = queue.Queue()
 
 class IRCClient(socketserver.StreamRequestHandler):
     def handle(self):
-        # read data from socket
-        self.data = self.rfile.readline().strip()
-        logger.debug(self.data)
-        # decode packet
-        packet = protocol.decode(self.data)
-        logger.debug("{} sent packet {}".format(self.client_address[0], packet.encode()))
-        # stick packet on msg_q
-        if packet.opcode == Opcode.PRIVATE_MSG:
-            msg_q.put("*" + packet.username + ": " + packet.message)
-        elif packet.opcode == Opcode.BROADCAST_MSG:
-            msg_q.put("BROADCAST|" + packet.username + ": " + packet.message)
-        elif packet.opcode == Opcode.MSG:
-            msg_q.put(packet.username + "(" + packet.room + ")" + ": " + packet.message)
+        try:
+            # read data from socket
+            self.data = self.rfile.readline().strip()
+            logger.debug(self.data)
+            # decode packet
+            packet = protocol.decode(self.data)
+            logger.debug("{} sent packet {}".format(self.client_address[0], packet.encode()))
+            # stick packet on msg_q
+            if packet.opcode == Opcode.PRIVATE_MSG:
+                msg_q.put("*" + packet.username + ": " + packet.message)
+            elif packet.opcode == Opcode.BROADCAST_MSG:
+                msg_q.put("BROADCAST|" + packet.username + ": " + packet.message)
+            elif packet.opcode == Opcode.MSG:
+                msg_q.put(packet.username + "(" + packet.room + ")" + ": " + packet.message)
+            elif packet.opcode == Opcode.DISCONNECT:
+                logger.info("{}".format(packet.err))
+                os._exit(1) # Handle Server Disconnect
+        except SystemError:
+            os._exit(1)
 
 
 def send(packet):
@@ -52,6 +60,13 @@ def send(packet):
             print(protocol.decode(res).err)
             s.close()
             return Status.ERR
+
+
+def bsend(packet):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((target_host, target_port))
+    s.send(packet.encode())
+    s.close()
 
 
 def display():
@@ -138,7 +153,13 @@ def send_leave(room):
 
 
 def broadcast(cmd):
-    pass
+    rooms = cmd.split(" ")
+    msg = input("Broadcast message>")
+    send_broadcast(msg, rooms)
+
+
+def send_broadcast(msg, rooms):
+    bsend(protocol.Broadcast(USERNAME, msg, rooms))
 
 
 def create_room(cmd):
@@ -148,10 +169,22 @@ def create_room(cmd):
 
 
 def send_create(room):
-    response = send(protocol.Create(room))
-    if response == Status.OK:
+    res = send(protocol.Create(room))
+    if res == Status.OK:
         if send(protocol.Join(USERNAME, room)) == Status.OK:
             ROOMS.append(room)
+
+
+def destroy_room(cmd):
+    rooms = cmd.split(" ")
+    for room in rooms:
+        send_destroy(room)
+
+
+def send_destroy(room):
+    res = send(protocol.Destroy(room))
+    if res == Status.OK:
+        ROOMS.remove(room)
 
 
 def client():
@@ -159,11 +192,13 @@ def client():
         cmd = input(USERNAME + " :")
         # /msg room message
         # /pm person message
+        # /destroy rooms
+        # /create rooms
         # /display room
         # /display
         # /list
         # /list room
-        # /joined
+        # /join room
         # /leave room
         # /broadcast room1 room2 room3 room4 room5
 
@@ -183,6 +218,9 @@ def client():
         elif cmd.find("/create") != -1:
             create_room(cmd.strip("/create").strip(" "))
 
+        elif cmd.find("/destroy") != -1:
+            destroy_room(cmd.strip("/destroy").strip(" "))
+
         elif cmd.find("/list") != -1:
             _list(cmd.strip("/list").strip(" "))
 
@@ -193,7 +231,7 @@ def client():
             leave(cmd.strip("/leave").strip(" "))
 
         elif cmd.find("/broadcast") != -1:
-            broadcast(cmd.find("/broadcast").strip(" "))
+            broadcast(cmd.strip("/broadcast").strip(" "))
 
         else:
             print(cmd, " not a valid command")
