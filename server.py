@@ -85,11 +85,20 @@ def message(username, msg, room):
 def append_sockets(addresses):
     sockets = []
     for address in addresses:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(address)
-        sockets.append(s)
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect(address)
+            sockets.append(s)
+        except socket.error as e:
+            if e.errno == 111: # connect err
+                remove_user(address)
     return sockets
 
+
+def remove_user(address):
+    for nick, user in USERS:
+        if user.address == address:
+            USERS.pop(nick)
 
 def priv_message(username, msg, send_to):
     # does user and send_to user exist
