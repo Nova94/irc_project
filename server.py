@@ -34,13 +34,17 @@ class Disconnection(Exception):
 
 
 def disconnect(users):
-    for nick, user in users.items():
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(user.address)
-        s.send(protocol.Disconnect(nick,
+        for nick, user in list(users.items()):
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect(user.address)
+                s.send(protocol.Disconnect(nick,
                                    status=Status.ERR,
                                    err="server shutting down").encode())
-        s.close()
+                s.close()
+            except socket.error as e:
+                if e.errno == 111:  # connect err
+                    remove_user(user.address)
 
 
 def signal_handler(signal, frame):
@@ -68,7 +72,7 @@ def message(username, msg, room):
         if room in USERS[username].rooms:
             logger.debug("{}".format(USERS))
             addresses = []
-            for nick, user in USERS.items():
+            for nick, user in list(USERS.items()):
                 if room in USERS[nick].rooms:
                     addresses.append(user.address)
 
@@ -96,34 +100,42 @@ def append_sockets(addresses):
 
 
 def remove_user(address):
-    for nick, user in USERS:
+    for nick, user in list(USERS.items()):
         if user.address == address:
             USERS.pop(nick)
+
 
 def priv_message(username, msg, send_to):
     # does user and send_to user exist
     if username in USERS and send_to in USERS:
-        msg_packet = protocol.PrivateMessage(username, msg, send_to, status=Status.OK)
+        try:
+            msg_packet = protocol.PrivateMessage(username, msg, send_to, status=Status.OK)
 
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(USERS[send_to].address)
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect(USERS[send_to].address)
 
-        with s.makefile('w') as wfile:
-            wfile.write(msg_packet.__str__())
-        s.close()
+            with s.makefile('w') as wfile:
+                wfile.write(msg_packet.__str__())
+            s.close()
+        except socket.error as e:
+            if e.errno == 111: # connect err
+                remove_user(USERS[send_to].address)
 
 
 def broadc_message(username, msg, rooms):
-    users = []
     users = find_users_broadcast(rooms)
 
     bmsg_packet = protocol.Broadcast(username, msg, rooms, status=Status.OK)
 
     sockets = []
     for user in users:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(user.address)
-        sockets.append(s)
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect(user.address)
+            sockets.append(s)
+        except socket.error as e:
+            if e.errno == 111:  # connect err
+                remove_user(user.address)
 
     for s in sockets:
         with s.makefile("w") as wfile:
@@ -135,7 +147,7 @@ def find_users_broadcast(rooms):
     users = []
     for room in rooms:
         if room in ROOMS:
-            for nick, user in USERS.items():
+            for nick, user in list(USERS.items()):
                 append_user(room, user, users)
     return users
 
