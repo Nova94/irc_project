@@ -340,7 +340,6 @@ class IRCHandler(socketserver.StreamRequestHandler):
             _list.status = Status.OK
             return _list
         elif _list.room in ROOMS:
-            logger.debug("here2")
             members = []
             for nick, user in USERS.items():
                 if _list.room in user.rooms:

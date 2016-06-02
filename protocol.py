@@ -1,149 +1,22 @@
+"""
+Protocol module - Used to implement the IRC Protocol
+according to the RFC documentation in this repository.
+"""
+
 from enum import Enum, unique
 
-
-def decode(arg):
-    """
-    decode the argument into a packet
-    :param arg: a string representation of a packet
-    :return: a packet class of Type
-    """
-    packet = arg.decode().split(" ")
-    packet = decode_dictionary[packet[0]](packet)
-    if packet is None:
-        raise TypeError
-
-    return packet
-
-
-def decode_type1(protocol_type):
-    def d1(packet):
-        var = packet[1]
-        status = packet[2]
-        err = ' '.join(packet[3:])
-        if status == "OK":
-            packet = protocol_type(var, status=Status.OK)
-        elif status == "ERR":
-            packet = protocol_type(var, status=Status.ERR, err=err)
-        else:
-            packet = protocol_type(var)
-        return packet
-
-    return d1
-
-
-def decode_type2(protocol_type):
-    def d2(packet):
-        var1 = packet[1]
-        var2 = packet[2]
-        status = packet[3]
-        err = ' '.join(packet[4:])
-        if status == "OK":
-            packet = protocol_type(var1, var2, status=Status.OK)
-        elif status == "ERR":
-            packet = protocol_type(var1, var2, status=Status.ERR, err=err)
-        else:
-            packet = protocol_type(var1, var2)
-        return packet
-
-    return d2
-
-
-def decode_list(packet):
-    room = packet[1]
-    length = int(packet[2])
-
-    if length == 0:
-        response = packet[3]
-        status = packet[4]
-        err = packet[5:]
-    else:
-        response = packet[3:(3 + length)]
-        status = packet[3 + length]
-        err = ' '.join(packet[4 + length:])
-
-    if status == "OK":
-        if room != "None":
-            packet = List(room=room, response=response, status=Status.OK)
-        else:
-            packet = List(response=response, status=Status.OK)
-
-    elif status == "ERR":
-        if room != "None":
-            packet = List(room=room, status=Status.ERR, err=err)
-        else:
-            packet = List(status=Status.ERR, err=err)
-
-    else:
-        if room != "None":
-            packet = List(room=room)
-        else:
-            packet = List()
-    return packet
-
-
-# def decode_type3(packet, protocol_type):
-def decode_type3(protocol_type):
-    def d3(packet):
-        var1 = packet[1]
-        length = int(packet[2])
-        var2 = ' '.join(packet[3:(3 + length)])
-        var3 = packet[(3 + length)]
-        status = packet[4 + length]
-        err = ' '.join(packet[5 + length:])
-        if status == "OK":
-            packet = protocol_type(var1, var2, var3, status=Status.OK)
-        elif status == "ERR":
-            packet = protocol_type(var1, var2, var3, status=Status.ERR, err=err)
-        else:
-            packet = protocol_type(var1, var2, var3)
-        return packet
-
-    return d3
-
-
-def decode_broadcast(packet):
-    username = packet[1]
-    msg_length = int(packet[2])
-    ml = packet[3:(3 + msg_length)]
-    message = " ".join(ml)
-    num_of_rooms = int(packet[3 + msg_length])
-    rooms = packet[4 + msg_length: 4 + msg_length + num_of_rooms]
-    status = packet[5 + msg_length + num_of_rooms]
-    err = packet[6 + msg_length + num_of_rooms:]
-
-    if status == "OK":
-        packet = Broadcast(username, message, rooms, status=Status.OK)
-    elif status == "ERR":
-        packet = Broadcast(username, message, rooms, status=Status.ERR, err=err)
-    else:
-        packet = Broadcast(username, message, rooms)
-    return packet
-
-
-def decode_connect(packet):
-    username = packet[1]
-    configs = to_dict(packet[2])
-    if packet[3] == "OK":
-        packet = Connect(username, configs, status=Status.OK)
-    elif packet[3] == "ERR":
-        packet = Connect(username, configs, status=Status.ERR, err=' '.join(packet[4:]))
-    else:
-        packet = Connect(username, configs)
-    return packet
-
-
-def to_dict(string):
-    if string == '{}':
-        return {}
-    l = string.replace('{', '').replace('}', '').replace('\'', '').split(', ')
-    d = {}
-    for kv in l:
-        k, v = kv.split(': ')
-        d[k] = v
-    return d
+__author__ = "Lisa Gray"
+__license__ = "MIT"
+__version__ = "1.0"
+__maintainer__ = "Lisa Gray"
+__email__ = "gray7@pdx.edu"
+__status__ = "Functional"
 
 
 class Status(Enum):
+    """
+    Status Enum used for packet OK or ERR statuses
+    """
     OK = 0
     ERR = 1
 
@@ -164,15 +37,14 @@ class Opcode(Enum):
     LEAVE = 8
     CREATE = 9
     DESTROY = 10
-
-    # FILE_TRANSFER = 11
+    # FILE_TRANSFER = 11 - to be implemented later
 
     def __str__(self):
         return self.name
 
 
 class Packet(object):
-    """generic packet class - used as a keep-alive message as well"""
+    """generic packet class"""
 
     def __init__(self, opcode, status, err=None):
         self.opcode = opcode
@@ -383,6 +255,202 @@ class Destroy(Packet):
                 + self.status.__str__() + " "
                 + self.err.__str__() + "\n").encode()
 
+
+def decode(arg):
+    """
+    decode the argument into a packet
+
+    :param arg: a string representation of a packet
+    :return: a packet class of Type
+    """
+    packet = arg.decode().split(" ")
+    packet = decode_dictionary[packet[0]](packet)
+    if packet is None:
+        raise TypeError
+
+    return packet
+
+
+def decode_type1(protocol_type):
+    """
+    decode a type 1 packet which can be defined as a packet that only takes on variable
+
+    :param protocol_type: The type of protocol to be constructed
+    :return: a function that will build the type
+    """
+    def d1(packet):
+        """
+        Inner function used to actually construct the packet
+
+        :param packet: the packet to be decoded
+        :return: a derived Packet object
+        """
+        var = packet[1]
+        status = packet[2]
+        err = ' '.join(packet[3:])
+        if status == "OK":
+            packet = protocol_type(var, status=Status.OK)
+        elif status == "ERR":
+            packet = protocol_type(var, status=Status.ERR, err=err)
+        else:
+            packet = protocol_type(var)
+        return packet
+
+    return d1
+
+
+def decode_type2(protocol_type):
+    """
+    decode a type 1 packet which can be defined as a packet that takes two variables
+
+    :param protocol_type: the type of protocol to be constructed
+    :return: a function that will build the type
+    """
+    def d2(packet):
+        """
+        Inner function used to actually construct the packet
+
+        :param packet: the packet to be decoded
+        :return: a derived Packet object
+        """
+        var1 = packet[1]
+        var2 = packet[2]
+        status = packet[3]
+        err = ' '.join(packet[4:])
+        if status == "OK":
+            packet = protocol_type(var1, var2, status=Status.OK)
+        elif status == "ERR":
+            packet = protocol_type(var1, var2, status=Status.ERR, err=err)
+        else:
+            packet = protocol_type(var1, var2)
+        return packet
+
+    return d2
+
+
+def decode_list(packet):
+    """
+    This function decodes the List packet in str format to the List object
+
+    :param packet: the packet to be decoded
+    :return: a List packet
+    """
+    room = packet[1]
+    length = int(packet[2])
+
+    if length == 0:
+        response = packet[3]
+        status = packet[4]
+        err = packet[5:]
+    else:
+        response = packet[3:(3 + length)]
+        status = packet[3 + length]
+        err = ' '.join(packet[4 + length:])
+
+    if status == "OK":
+        if room != "None":
+            packet = List(room=room, response=response, status=Status.OK)
+        else:
+            packet = List(response=response, status=Status.OK)
+
+    elif status == "ERR":
+        if room != "None":
+            packet = List(room=room, status=Status.ERR, err=err)
+        else:
+            packet = List(status=Status.ERR, err=err)
+
+    else:
+        if room != "None":
+            packet = List(room=room)
+        else:
+            packet = List()
+    return packet
+
+
+def decode_type3(protocol_type):
+    """
+    decode a type 3 packet which can be defined as a packet that takes three variables
+
+    :param protocol_type: The type of protocol to be constructed
+    :return: a function that will build the type
+    """
+    def d3(packet):
+        """
+        Inner function used to actually construct the packet
+
+        :param packet: the packet to be decoded
+        :return: a derived Packet object
+        """
+        var1 = packet[1]
+        length = int(packet[2])
+        var2 = ' '.join(packet[3:(3 + length)])
+        var3 = packet[(3 + length)]
+        status = packet[4 + length]
+        err = ' '.join(packet[5 + length:])
+        if status == "OK":
+            packet = protocol_type(var1, var2, var3, status=Status.OK)
+        elif status == "ERR":
+            packet = protocol_type(var1, var2, var3, status=Status.ERR, err=err)
+        else:
+            packet = protocol_type(var1, var2, var3)
+        return packet
+
+    return d3
+
+
+def decode_broadcast(packet):
+    """
+    decode a Broadcast packet
+
+    :param packet: a string representing a broadcast packet
+    :return: return a Broadcast packet
+    """
+    username = packet[1]
+    msg_length = int(packet[2])
+    ml = packet[3:(3 + msg_length)]
+    message = " ".join(ml)
+    num_of_rooms = int(packet[3 + msg_length])
+    rooms = packet[4 + msg_length: 4 + msg_length + num_of_rooms]
+    status = packet[5 + msg_length + num_of_rooms]
+    err = packet[6 + msg_length + num_of_rooms:]
+
+    if status == "OK":
+        packet = Broadcast(username, message, rooms, status=Status.OK)
+    elif status == "ERR":
+        packet = Broadcast(username, message, rooms, status=Status.ERR, err=err)
+    else:
+        packet = Broadcast(username, message, rooms)
+    return packet
+
+
+def decode_connect(packet):
+    """
+    decode a Connect packet
+
+    :param packet: a string representing a Connect packet
+    :return: return a Connect packet object
+    """
+    username = packet[1]
+    configs = to_dict(packet[2])
+    if packet[3] == "OK":
+        packet = Connect(username, configs, status=Status.OK)
+    elif packet[3] == "ERR":
+        packet = Connect(username, configs, status=Status.ERR, err=' '.join(packet[4:]))
+    else:
+        packet = Connect(username, configs)
+    return packet
+
+
+# (only works with {}, for now)
+def to_dict(string):
+    if string == '{}':
+        return {}
+    l = string.replace('{', '').replace('}', '').replace('\'', '').split(', ')
+    d = {}
+    for kv in l:
+        k, v = kv.split(': ')
+        d[k] = v
+    return d
 
 """
 dictionary used to determine the

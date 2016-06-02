@@ -4,7 +4,6 @@ import socket
 import protocol
 import queue
 import threading
-import sys
 import os
 from protocol import Status
 from protocol import Opcode
