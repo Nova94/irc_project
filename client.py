@@ -15,7 +15,7 @@ target_port = 9999
 # set up logging
 logging.basicConfig(format='%(asctime)s %(message)s')
 logger = logging.getLogger("server-log")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 # rooms client is in w/ messages
 USERNAME = "player1"
