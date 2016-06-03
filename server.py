@@ -21,6 +21,7 @@ USERS = {}
 ROOMS = []
 SERVER_SOCKET = None
 
+
 class Disconnection(Exception):
     """
     This exception is used to handle disconnects
@@ -34,20 +35,21 @@ class Disconnection(Exception):
 
 
 def disconnect(users):
-        for nick, user in list(users.items()):
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.connect(user.address)
-                s.send(protocol.Disconnect(nick,
-                                   status=Status.ERR,
-                                   err="server shutting down").encode())
-                s.close()
-            except socket.error as e:
-                if e.errno == 111:  # connect err
-                    remove_user(user.address)
+    """This function sends Disconnect packets to users when the server is killed."""
+    for nick, user in list(users.items()):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect(user.address)
+            s.send(protocol.Disconnect(nick,
+                                       status=Status.ERR,
+                                       err="server shutting down").encode())
+            s.close()
+        except socket.error as e:
+            if e.errno == 111:  # connect err
+                remove_user(user.address)
 
 
-def signal_handler(signal, frame):
+def interrupt_handler(signal, frame):
     """Function handles signal interrupt (CTRL-C)
     :param signal: signal caught
     :param frame: current stack frame
@@ -62,7 +64,7 @@ def signal_handler(signal, frame):
 
 
 # initialize signal handler
-signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGINT, interrupt_handler)
 
 
 def message(username, msg, room):
@@ -94,7 +96,7 @@ def append_sockets(addresses):
             s.connect(address)
             sockets.append(s)
         except socket.error as e:
-            if e.errno == 111: # connect err
+            if e.errno == 111:  # connect err
                 remove_user(address)
     return sockets
 
@@ -118,7 +120,7 @@ def priv_message(username, msg, send_to):
                 wfile.write(msg_packet.__str__())
             s.close()
         except socket.error as e:
-            if e.errno == 111: # connect err
+            if e.errno == 111:  # connect err
                 remove_user(USERS[send_to].address)
 
 
@@ -185,38 +187,32 @@ class IRCHandler(socketserver.StreamRequestHandler):
 
     def _handle_packet(self, packet):
         """
-
-        :param packet:
-        :return:
+        function handles the packet creating a Packet obj of the passed in Type
+        :param packet: a string representing a packet
+        :return: a Packet obj of type
         """
-        if packet.opcode == Opcode.CONNECT:
-            return self._handle_connection(packet)
-        elif packet.opcode == Opcode.DISCONNECT:
-            return self._handle_disconnect(packet)
-        elif packet.opcode == Opcode.CREATE:
-            return self._handle_create(packet)
-        elif packet.opcode == Opcode.DESTROY:
-            return self._handle_destroy(packet)
-        elif packet.opcode == Opcode.JOIN:
-            return self._handle_join(packet)
-        elif packet.opcode == Opcode.LEAVE:
-            return self._handle_leave(packet)
-        elif packet.opcode == Opcode.LIST:
-            return self._handle_list(packet)
-        elif packet.opcode == Opcode.MSG:
-            return self._handle_message(packet)
-        elif packet.opcode == Opcode.PRIVATE_MSG:
-            return self._handle_private_message(packet)
-        elif packet.opcode == Opcode.BROADCAST_MSG:
-            return self._handle_broadcast_message(packet)
+        # handle dispatcher *would like to move so made once.
+        self.handle_d = {
+            Opcode.CONNECT: self._handle_connection,
+            Opcode.DISCONNECT: self._handle_disconnect,
+            Opcode.CREATE: self._handle_create,
+            Opcode.DESTROY: self._handle_destroy,
+            Opcode.JOIN: self._handle_join,
+            Opcode.LEAVE: self._handle_leave,
+            Opcode.LIST: self._handle_list,
+            Opcode.MSG: self._handle_message,
+            Opcode.PRIVATE_MSG: self._handle_private_message,
+            Opcode.BROADCAST_MSG: self._handle_broadcast_message,
+        }
 
-        return protocol.Packet(Opcode.KEEP_ALIVE, Status.OK)
+        return self.handle_d[packet.opcode](packet)
 
     def _handle_connection(self, connect):
         """
+        handles a new connection by adding user to USERS
 
-        :param connect:
-        :return:
+        :param connect: Connect packet
+        :return: a Connect packet with updated status
         """
         if connect.username not in USERS:
             # create new user and add to USERS dictionary
@@ -225,6 +221,7 @@ class IRCHandler(socketserver.StreamRequestHandler):
             new_user.address = (new_user.address[0], port)
             logger.debug("{} {}".format(new_user.address[0], new_user.address[1]))
             USERS[new_user.nick] = new_user
+
             # log new user
             logger.info("new user {} has connected".format(new_user.nick))
 
@@ -237,16 +234,16 @@ class IRCHandler(socketserver.StreamRequestHandler):
 
     def _handle_disconnect(self, disconnect):
         """
+        Handles a Disconnection, updates USERS
 
-        :param disconnect:
-        :return:
+        :param disconnect: a Disconnect packet
+        :return: a Disconnect packet with updated status
         """
         if disconnect.username in USERS:
             # send message of disconnect to rooms
             # remove from USERS
             USERS.pop(disconnect.username)
             logger.info("user {} has disconnected".format(disconnect.username))
-            logger.debug("connected USERS - {}".format(USERS.__str__()))
             # send OK response
             disconnect.status = Status.OK
             self.wfile.write(disconnect.encode())
@@ -259,9 +256,10 @@ class IRCHandler(socketserver.StreamRequestHandler):
     @staticmethod
     def _handle_create(create):
         """
+        handles room creations
 
-        :param create:
-        :return:
+        :param create: Create packet
+        :return: return Create packet with updated status
         """
         if create.room not in ROOMS:
             # create the room
@@ -279,9 +277,10 @@ class IRCHandler(socketserver.StreamRequestHandler):
     @staticmethod
     def _handle_destroy(destroy):
         """
+        handles room deletion
 
-        :param destroy:
-        :return:
+        :param destroy: Destroy packet
+        :return: return Destroy packet with updated status
         """
         if destroy.room in ROOMS:
             # remove the room
@@ -298,6 +297,11 @@ class IRCHandler(socketserver.StreamRequestHandler):
 
     @staticmethod
     def _handle_join(join):
+        """
+        handles a user joining a room, sends join message
+        :param join: Join packet
+        :return: return Join packet with updated status
+        """
         if join.username in USERS and join.room in ROOMS:
             # join room in users group
             USERS[join.username].join_room(join.room)
@@ -315,6 +319,12 @@ class IRCHandler(socketserver.StreamRequestHandler):
 
     @staticmethod
     def _handle_leave(leave):
+        """
+        handles a user leaving a room, messages room about leave
+
+        :param leave: Leave packet
+        :return: return Leave packet with updated status
+        """
         if leave.username in USERS and leave.room in ROOMS:
             # leave room in users group
             USERS[leave.username].leave_room(leave.room)
@@ -334,16 +344,19 @@ class IRCHandler(socketserver.StreamRequestHandler):
 
     @staticmethod
     def _handle_list(_list):
+        """
+        handles list packet, returns reponse with information
+
+        :param _list: List packet
+        :return: return List packet with response and updated status
+        """
         if _list.room is None:
             _list.response = ' '.join(ROOMS)
             _list.length = len(ROOMS)
             _list.status = Status.OK
             return _list
         elif _list.room in ROOMS:
-            members = []
-            for nick, user in USERS.items():
-                if _list.room in user.rooms:
-                    members.append(nick)
+            members = IRCHandler.find_members(_list)
             _list.response = ' '.join(members)
             _list.length = len(members)
             _list.status = Status.OK
@@ -352,7 +365,27 @@ class IRCHandler(socketserver.StreamRequestHandler):
             return IRCHandler._error(_list, "error with list")
 
     @staticmethod
+    def find_members(_list):
+        """
+        find members in the room
+
+        :param _list: List packet
+        :return: a list contain memberships of room
+        """
+        members = []
+        for nick, user in USERS.items():
+            if _list.room in user.rooms:
+                members.append(nick)
+        return members
+
+    @staticmethod
     def _handle_message(msg):
+        """
+        messages room with MSG packet
+
+        :param msg: Message Packet
+        :return: return message Packet with updated status
+        """
         if msg.username in USERS and msg.room in ROOMS:
             message(msg.username, msg.message, msg.room)
             logger.info("{} sent message {} to room {}".format(
@@ -365,6 +398,12 @@ class IRCHandler(socketserver.StreamRequestHandler):
 
     @staticmethod
     def _handle_private_message(private_message):
+        """
+        message a user a private message
+
+        :param private_message:
+        :return:
+        """
         pmsg = private_message
         if pmsg.username in USERS and pmsg.send_to in USERS:
             priv_message(pmsg.username, pmsg.message, pmsg.send_to)
@@ -377,6 +416,12 @@ class IRCHandler(socketserver.StreamRequestHandler):
             return IRCHandler._error(pmsg, "could not send private smessage")
 
     def _handle_broadcast_message(self, broadcast_message):
+        """
+        broadcasts the message to the specified rooms
+
+        :param broadcast_message: broadcase packet
+        :return: packet with updated information
+        """
         bmsg = broadcast_message
         if bmsg.username in USERS:
             broadc_message(bmsg.username, bmsg.message, bmsg.rooms.split(" "))
@@ -394,7 +439,7 @@ class IRCHandler(socketserver.StreamRequestHandler):
     @staticmethod
     def _error(packet, error_message):
         """
-        This static method is used for returning messages to client
+        This static method is used for returning error messages to client
 
         :param packet: is the packet to set error status to
         :param error_message: the message passed along
@@ -410,4 +455,3 @@ if __name__ == '__main__':
     SERVER_SOCKET = server.socket
     print("[*] server is now running on {} : {}".format(HOST, PORT))
     server.serve_forever()
-

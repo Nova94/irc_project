@@ -52,13 +52,14 @@ def send(packet):
     s.send(packet.encode())
     for res in s.makefile('r'):
         res = res.encode()
-        if protocol.decode(res).status == protocol.Status.OK:
+        res = protocol.decode(res)
+        if res.status == protocol.Status.OK:
             s.close()
-            return Status.OK
-        elif protocol.decode(res).status == protocol.Status.ERR:
-            print(protocol.decode(res).err)
+            return res
+        elif res.status == protocol.Status.ERR:
+            print(res.err)
             s.close()
-            return Status.ERR
+            return res
 
 
 def bsend(packet):
@@ -136,7 +137,8 @@ def join(cmd):
 
 
 def send_join(room):
-    if send(protocol.Join(USERNAME, room)) == Status.OK:
+    res = send(protocol.Join(USERNAME, room))
+    if res.status == Status.OK:
         ROOMS.append(room)
 
 
@@ -147,7 +149,8 @@ def leave(cmd):
 
 
 def send_leave(room):
-    if send(protocol.Leave(USERNAME, room)) == Status.OK:
+    res = send(protocol.Leave(USERNAME, room))
+    if res.status == Status.OK and res.room in ROOMS:
         ROOMS.remove(room)
 
 
@@ -182,7 +185,7 @@ def destroy_room(cmd):
 
 def send_destroy(room):
     res = send(protocol.Destroy(room))
-    if res == Status.OK:
+    if res == Status.OK and res.room in ROOMS:
         ROOMS.remove(room)
 
 

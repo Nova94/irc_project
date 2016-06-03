@@ -26,7 +26,6 @@ class Status(Enum):
 
 @unique
 class Opcode(Enum):
-    KEEP_ALIVE = 0
     CONNECT = 1
     DISCONNECT = 2
     MSG = 3
@@ -457,7 +456,6 @@ dictionary used to determine the
 type of packet and returns appropriate packet class
 """
 decode_dictionary = {
-    "KEEP_ALIVE": Packet(Opcode.KEEP_ALIVE, Status.OK),
     "CONNECT": decode_connect,
     "DISCONNECT": decode_type1(Disconnect),
     "MSG": decode_type3(Message),

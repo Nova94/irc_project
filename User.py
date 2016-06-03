@@ -1,7 +1,7 @@
 
 
 class User(object):
-    """This class is used to describe a user which contains a nick, socket, and room list"""
+    """This class is used to describe a user which contains a nick, address, and room list"""
 
     def __init__(self, nick, address):
         self.nick = nick
