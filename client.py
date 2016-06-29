@@ -8,7 +8,6 @@ import os
 from protocol import Status
 from protocol import Opcode
 
-
 target_host = '0.0.0.0'
 target_port = 9999
 
@@ -41,7 +40,7 @@ class IRCClient(socketserver.StreamRequestHandler):
                 msg_q.put(packet.username + "(" + packet.room + ")" + ": " + packet.message)
             elif packet.opcode == Opcode.DISCONNECT:
                 logger.info("{}".format(packet.err))
-                os._exit(1) # Handle Server Disconnect
+                os._exit(1)  # Handle Server Disconnect
         except SystemError:
             os._exit(1)
 
@@ -279,4 +278,3 @@ if __name__ == '__main__':
             raise serr
         else:
             logger.error("could not contact server - server is probably down")
-
